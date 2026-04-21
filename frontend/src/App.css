@@ -28,6 +28,11 @@ body {
   box-shadow: 0 4px 6px rgba(0,0,0,0.1);
 }
 
+/* Make header grander */
+.app-header h1 { font-size: 28px; letter-spacing: 0.6px; }
+.app-header p { opacity: 0.9; }
+.app-header button { padding: 8px 12px; border-radius: 6px; border: none; color: white; background: #e74c3c; cursor: pointer; }
+
 .dashboard-content {
   display: flex;
   flex-direction: column;
@@ -36,7 +41,7 @@ body {
 
 .forms-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
   gap: 20px;
 }
 
@@ -65,6 +70,50 @@ input, select {
   padding: 10px;
   border: 1px solid #ccc;
   border-radius: 4px;
+}
+
+/* File input label styling */
+.file-input-label {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+}
+.file-input-label input[type="file"] {
+  cursor: pointer;
+}
+
+.file-input-label label[for="student-upload"] {
+  display: inline-block;
+}
+
+/* Seating form top controls */
+.seating-controls {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+  margin-bottom: 10px;
+  flex-wrap: wrap;
+}
+.auto-assign-select {
+  min-width: 220px;
+  padding: 8px 10px;
+}
+.download-btn {
+  padding: 6px 10px;
+  background-color: #27ae60;
+  border-radius: 4px;
+  color: #fff;
+  border: none;
+  cursor: pointer;
+}
+.download-btn:hover { background-color: #229954 }
+
+/* Pagination buttons small */
+.pagination button { padding: 6px 10px; }
+
+/* Make action buttons full width on small forms */
+.form-container form button, .form-container > button {
+  width: 100%;
 }
 
 button {
