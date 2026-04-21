@@ -4,9 +4,10 @@ const multer = require('multer');
 const xlsx = require('xlsx');
 const db = require('./db');
 const fs = require('fs');
+const os = require('os');
 
-if (!fs.existsSync('uploads')) fs.mkdirSync('uploads');
-const upload = multer({ dest: 'uploads/' });
+const uploadDir = os.tmpdir();
+const upload = multer({ dest: uploadDir });
 
 const app = express();
 
@@ -42,37 +43,50 @@ app.use(express.json());
             )
         `);
         console.log('Ensured HallDepartment table exists');
+
+        await db.query(`
+            CREATE TABLE IF NOT EXISTS Session (
+                token VARCHAR(255) PRIMARY KEY,
+                username VARCHAR(100) NOT NULL,
+                expires BIGINT NOT NULL
+            )
+        `);
+        console.log('Ensured Session table exists');
+        
+        // Clean up expired sessions periodically (optional, but handled manually here)
+        await db.query('DELETE FROM Session WHERE expires < ?', [Date.now()]);
     } catch (err) {
-        console.error('Failed to ensure HallDepartment table:', err.message || err);
+        console.error('Failed to ensure tables exist:', err.message || err);
     }
 })();
 
-// --- Simple in-memory session store (suitable for small deployments)
+// --- Database-backed session store for serverless compatibility
 const crypto = require('crypto');
-const SESSIONS = {}; // token -> { username, expires }
 const SESSION_TTL = Number(process.env.SESSION_TTL_MS) || (8 * 60 * 60 * 1000); // 8 hours default
 
-function createSession(username) {
+async function createSession(username) {
     const token = crypto.randomBytes(24).toString('hex');
-    SESSIONS[token] = { username, expires: Date.now() + SESSION_TTL };
+    const expires = Date.now() + SESSION_TTL;
+    await db.query('INSERT INTO Session (token, username, expires) VALUES (?, ?, ?)', [token, username, expires]);
     return token;
 }
 
-function validateSession(token) {
+async function validateSession(token) {
     if (!token) return null;
-    const s = SESSIONS[token];
-    if (!s) return null;
-    if (s.expires < Date.now()) {
-        delete SESSIONS[token];
+    const [[session]] = await db.query('SELECT * FROM Session WHERE token = ?', [token]);
+    if (!session) return null;
+    if (session.expires < Date.now()) {
+        await db.query('DELETE FROM Session WHERE token = ?', [token]);
         return null;
     }
     // refresh expiry
-    s.expires = Date.now() + SESSION_TTL;
-    return s.username;
+    const newExpires = Date.now() + SESSION_TTL;
+    await db.query('UPDATE Session SET expires = ? WHERE token = ?', [newExpires, token]);
+    return session.username;
 }
 
 // Auth middleware: allow login endpoint through, protect other /api routes
-app.use((req, res, next) => {
+app.use(async (req, res, next) => {
     // Allow login and logout endpoints
     if (req.path === '/api/admin/login' || req.path === '/api/admin/logout') return next();
     // Allow non-API routes
@@ -88,11 +102,17 @@ app.use((req, res, next) => {
     const m = auth.match(/^Bearer\s+(.*)$/i);
     const token = m ? m[1] : (req.query && req.query.token);
     if (!token) return res.status(401).json({ error: 'Missing auth token' });
-    const user = validateSession(token);
-    if (!user) return res.status(401).json({ error: 'Invalid or expired token' });
-    // attach user
-    req.adminUser = user;
-    next();
+    
+    try {
+        const user = await validateSession(token);
+        if (!user) return res.status(401).json({ error: 'Invalid or expired token' });
+        // attach user
+        req.adminUser = user;
+        next();
+    } catch (err) {
+        console.error('Session validation error:', err);
+        return res.status(500).json({ error: 'Internal server error during auth' });
+    }
 });
 
 // --- ROUTES ---
@@ -217,7 +237,7 @@ app.post('/api/admin/login', async (req, res) => {
         // For production, store bcrypt hashes and use bcrypt.compare.
         if (password !== admin.password_hash) return res.status(401).json({ error: 'Invalid credentials' });
         // create a session token and return it
-        const token = createSession(admin.username);
+        const token = await createSession(admin.username);
         res.json({ success: true, username: admin.username, token, expiresInMs: SESSION_TTL });
     } catch (err) {
         res.status(500).json({ error: err.message });
@@ -229,7 +249,11 @@ app.post('/api/admin/logout', async (req, res) => {
     const auth = req.get('authorization') || '';
     const m = auth.match(/^Bearer\s+(.*)$/i);
     const token = m ? m[1] : (req.query && req.query.token);
-    if (token && SESSIONS[token]) delete SESSIONS[token];
+    if (token) {
+        try {
+            await db.query('DELETE FROM Session WHERE token = ?', [token]);
+        } catch (err) {}
+    }
     res.json({ success: true });
 });
 
