@@ -117,6 +117,11 @@ app.use(async (req, res, next) => {
 
 // --- ROUTES ---
 
+// Root status route
+app.get('/', (req, res) => {
+    res.send('Exam Hall Backend API is running! Use /api/ endpoints to interact with the system.');
+});
+
 // 1. STUDENTS
 app.get('/api/students', async (req, res) => {
     try {
